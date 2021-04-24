@@ -1,0 +1,80 @@
+---
+- hosts: '{{ target_hosts }}'
+  vars:
+      pwd: /opt/multiple_env_ansible
+  become: yes
+
+  tasks:
+  - name: Install PIP
+    yum:
+      name: python-pip
+      state: present
+  - name: Install lxml
+    pip:
+      name: lxml
+
+  - name: Remove Older JARS
+    file:
+      path: /opt/gs-spring-boot-*.jar
+      state: absent
+  - name: get local file name
+    local_action: shell ls {{ pwd }}/springboohello-CICD/target/*.jar
+    register: file_name
+    tags: test
+
+  - name: Copy jar from local to remote
+    copy:
+      src: "{{ file_name.stdout }}"
+      dest: /opt
+      mode: 0755
+    when: file_name.stdout != ""
+
+  - name: Copy gs-spring-boot from local to remote
+    copy:
+      src: gs-spring-boot
+      dest: /opt
+      mode: 0755
+
+  - name: Check if java rpm is already installed or not
+    yum:
+      list: java-1.8.0-openjdk
+      # If not installed yum_list.results[*].yumstate != installed
+    register: check_java_existence
+  - name : Install java
+    yum:
+      name: java-1.8.0-openjdk
+      state: present
+    when: check_java_existence.results | selectattr("yumstate", "match", "installed") | list | length == 0
+  - name: Create Tomcat user and Group
+    user:
+      name: helloworld
+      comment: user for helloworld
+  - name: Change owner ship for helloworld
+    file:
+      path: /opt/gs-spring-boot-{{ version }}.jar
+      owner: helloworld
+      group: helloworld
+      mode: '0755'
+  - name: Create the soft link from old to new version
+    file:
+      src: /opt/gs-spring-boot-{{ version }}.jar
+      dest: "/opt/gs-spring-boot.jar"
+      state: link
+
+  - name : Tomcat template
+    template:
+      src: helloworld.service.j2
+      dest: ./helloworld.service
+  - name: Copy helloworld service from local to remote
+    copy:
+      src: /root/helloworld.service
+      dest: /etc/systemd/system/
+      mode: 0755
+      remote_src: yes
+  - name: just force systemd to reread configs (2.4 and above)
+    systemd:
+      daemon_reload: yes
+  - name: enable helloworld startup
+    service:
+      name: helloworld
+      state: restarted

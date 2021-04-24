@@ -1,0 +1,80 @@
+---
+- hosts: '{{ target_hosts }}'
+  vars:
+      pwd: /opt/multiple_env_ansible
+  become: yes
+
+  tasks:
+  - name: Install PIP
+    yum:
+      name: python-pip
+      state: present
+  - name: Install lxml
+    pip:
+      name: lxml
+
+  - name: Remove Older JARS
+    file:
+      path: /opt/gs-spring-boot-*.jar
+      state: absent
+  
+  - name: download jar file nexus repository
+      become_user: jenkins
+      maven_artifact:
+        group_id: org.springframework
+        artifact_id: gs-spring-boot
+        version: "{{  version }}"
+        repository_url: 'http://52.53.252.193:8081/repository/maven-releases/'
+        username: "{{ lookup('amazon.aws.aws_secret', 'nexus_username') }}"
+        password: "{{ lookup('amazon.aws.aws_secret', 'nexus_password') }}"
+        dest: /opt
+
+  - name: Copy gs-spring-boot from local to remote
+    copy:
+      src: gs-spring-boot
+      dest: /opt
+      mode: 0755
+
+  - name: Check if java rpm is already installed or not
+    yum:
+      list: java-1.8.0-openjdk
+      # If not installed yum_list.results[*].yumstate != installed
+    register: check_java_existence
+  - name : Install java
+    yum:
+      name: java-1.8.0-openjdk
+      state: present
+    when: check_java_existence.results | selectattr("yumstate", "match", "installed") | list | length == 0
+  - name: Create Tomcat user and Group
+    user:
+      name: helloworld
+      comment: user for helloworld
+  - name: Change owner ship for helloworld
+    file:
+      path: /opt/gs-spring-boot-{{ version }}.jar
+      owner: helloworld
+      group: helloworld
+      mode: '0755'
+  - name: Create the soft link from old to new version
+    file:
+      src: /opt/gs-spring-boot-{{ version }}.jar
+      dest: "/opt/gs-spring-boot.jar"
+      state: link
+
+  - name : Tomcat template
+    template:
+      src: helloworld.service.j2
+      dest: ./helloworld.service
+  - name: Copy helloworld service from local to remote
+    copy:
+      src: /root/helloworld.service
+      dest: /etc/systemd/system/
+      mode: 0755
+      remote_src: yes
+  - name: just force systemd to reread configs (2.4 and above)
+    systemd:
+      daemon_reload: yes
+  - name: enable helloworld startup
+    service:
+      name: helloworld
+      state: restarted

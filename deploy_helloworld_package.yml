@@ -1,0 +1,18 @@
+---
+- name: deploy helloworkld package
+  hosts: '{{ target_hosts }}'
+  become: true
+  
+  tasks:
+  
+  - name: Download Artifacts
+    import_tasks: tasks/download_artifact_from_nexus.yml
+
+  - name: Stop helloworld service
+    import_tasks: tasks/stop_helloworld_service.yml
+
+  - name: Service creation and link update
+    import_tasks: tasks/service_creation_and_link_update.yml
+
+  - name: Start helloworld service
+    import_tasks: tasks/start_helloworld_service.yml

@@ -1,0 +1,47 @@
+---
+  vars:
+      pwd: /opt/multiple_env_ansible
+  become: yes
+  - include_vars: snapshot.yml
+     when: "'Snapshot' in version"
+
+  - include_vars: release.yml
+     when: "'Snapshot' not in version"
+
+  - debug: var=repo_url
+
+  - name: Install PIP
+    yum:
+      name: python-pip
+      state: present
+  - name: Install lxml
+    pip:
+      name: lxml
+
+  - name: Check if java rpm is already installed or not
+    yum:
+      list: java-1.8.0-openjdk
+      # If not installed yum_list.results[*].yumstate != installed
+    register: check_java_existence
+      
+  - name : Install java
+    yum:
+      name: java-1.8.0-openjdk
+      state: present
+    when: check_java_existence.results | selectattr("yumstate", "match", "installed") | list | length == 0
+
+  - name: Remove Older JARS
+    file:
+      path: /opt/gs-spring-boot-*.jar
+      state: absent
+
+  - name: download jar file nexus repository
+      become_user: jenkins
+      maven_artifact:
+        group_id: org.springframework
+        artifact_id: gs-spring-boot
+        version: "{{  version }}"
+        repository_url: "{{  repo_url }}"
+        username: "{{ lookup('amazon.aws.aws_secret', 'nexus_username') }}"
+        password: "{{ lookup('amazon.aws.aws_secret', 'nexus_password') }}"
+        dest: /opt
